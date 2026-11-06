@@ -69,7 +69,7 @@ Open the local URL displayed by Vite, usually `http://localhost:5173`.
 
 ## Author Details
 
-- Name: [Your Name]
-- Department: [Your Department]
-- College: [Your College]
-- Academic Year: [Your Academic Year]
+- Name: [Divyasri S]
+- Department: [Computer Science Engineering (Artificial Intelligence and Machine Learning)]
+- College: [Easwari Engineering College]
+- Academic Year: [2026-2027]
