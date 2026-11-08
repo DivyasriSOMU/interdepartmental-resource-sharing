@@ -1,4 +1,6 @@
+
 const express = require("express");
+
 const {
     createUser,
     getUsers,
@@ -7,16 +9,24 @@ const {
     deleteUser,
     loginUser
 } = require("../controllers/userController");
+
 const protect = require("../middleware/authMiddleware");
 const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
+// Public routes
 router.post("/", createUser);
-router.get("/", protect, authorize("admin"), getUsers);
-router.get("/:id", getUserById);
-router.put("/:id", updateUser);
-router.delete("/:id", deleteUser);
 router.post("/login", loginUser);
+
+// Admin-only route
+router.get("/", protect, authorize("admin"), getUsers);
+
+// Protected user routes
+router.get("/:id", protect, getUserById);
+router.put("/:id", protect, updateUser);
+
+// Admin-only delete
+router.delete("/:id", protect, authorize("admin"), deleteUser);
 
 module.exports = router;
