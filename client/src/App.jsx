@@ -2,12 +2,13 @@
 import { useState } from 'react'
 import './App.css'
 
-const API_URL = 'https://interdepartmental-resource-sharing.onrender.com/api';
+const API_URL = 'https://interdepartmental-resource-sharing.onrender.com/api'
 
 function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [loggedInUser, setLoggedInUser] = useState(null)
 
@@ -98,7 +99,19 @@ function App() {
   // Login
   const handleLogin = async (event) => {
     event.preventDefault()
-    setMessage('')
+
+    if (isLoggingIn) return
+
+    if (!email.trim() || !password) {
+      setMessage('Please enter your email and password.')
+      return
+    }
+
+    setIsLoggingIn(true)
+    setMessage('Connecting to the server... Please wait.')
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     try {
       const response = await fetch(`${API_URL}/users/login`, {
@@ -106,18 +119,40 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+        signal: controller.signal,
       })
 
-      const data = await response.json()
+      const responseText = await response.text()
+      let data
+
+      try {
+        data = responseText ? JSON.parse(responseText) : {}
+      } catch {
+        throw new Error('The server returned an invalid response.')
+      }
 
       if (!response.ok) {
-        setMessage(data.message || 'Login failed. Please check your details.')
+        setMessage(
+          data.message ||
+          data.error ||
+          `Login failed. Server status: ${response.status}`
+        )
         return
       }
 
       if (!data.token) {
-        setMessage('Login succeeded, but no token was returned.')
+        setMessage(
+          'Login succeeded, but the server did not return a token.'
+        )
+        return
+      }
+
+      if (!data.user) {
+        setMessage('The server did not return user details.')
         return
       }
 
@@ -135,10 +170,23 @@ function App() {
       setMessage('')
       setRequestMessage('')
       setAdminMessage('')
+
     } catch (error) {
-      setMessage(
-        'Cannot connect to the server. Please check that the backend is running.'
-      )
+      console.error('Login error:', error)
+
+      if (error.name === 'AbortError') {
+        setMessage(
+          'The server is taking too long to respond. Please try again.'
+        )
+      } else {
+        setMessage(
+          error.message ||
+          'Cannot connect to the server. Please try again.'
+        )
+      }
+    } finally {
+      clearTimeout(timeoutId)
+      setIsLoggingIn(false)
     }
   }
 
@@ -165,9 +213,7 @@ function App() {
   const getDepartmentId = () => {
     const userDepartment = loggedInUser?.department
 
-    if (!userDepartment) {
-      return null
-    }
+    if (!userDepartment) return null
 
     const departmentId =
       typeof userDepartment === 'object'
@@ -188,11 +234,9 @@ function App() {
     return department?._id || null
   }
 
-  // Find alternative resources when a time conflict occurs
+  // Find alternative resources
   const fetchAlternatives = async () => {
-    if (!selectedResource || !startDate || !endDate) {
-      return
-    }
+    if (!selectedResource || !startDate || !endDate) return
 
     try {
       const params = new URLSearchParams({
@@ -287,9 +331,8 @@ function App() {
 
       await fetchRequests()
     } catch (error) {
-      setRequestMessage(
-        'Cannot connect to the server. Please try again.'
-      )
+      console.error('Request submission error:', error)
+      setRequestMessage('Cannot connect to the server. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -338,6 +381,7 @@ function App() {
 
       await fetchDepartments()
     } catch (error) {
+      console.error('Add department error:', error)
       setAdminMessage('Could not connect to the server.')
     } finally {
       setIsSavingAdminData(false)
@@ -389,6 +433,7 @@ function App() {
 
       await fetchResources()
     } catch (error) {
+      console.error('Add resource error:', error)
       setAdminMessage('Could not connect to the server.')
     } finally {
       setIsSavingAdminData(false)
@@ -431,6 +476,7 @@ function App() {
       setRequestMessage(`Request ${status} successfully.`)
       await fetchRequests()
     } catch (error) {
+      console.error('Update request status error:', error)
       setRequestMessage('Could not connect to the server.')
     }
   }
@@ -484,35 +530,25 @@ function App() {
             <form onSubmit={handleAddDepartment}>
               <h3>Add Department</h3>
 
-              <label htmlFor="newDepartmentName">
-                Department Name
-              </label>
+              <label htmlFor="newDepartmentName">Department Name</label>
               <input
                 id="newDepartmentName"
                 value={departmentName}
-                onChange={(event) =>
-                  setDepartmentName(event.target.value)
-                }
+                onChange={(event) => setDepartmentName(event.target.value)}
                 placeholder="e.g. Information Technology"
                 required
               />
 
-              <label htmlFor="newDepartmentCode">
-                Department Code
-              </label>
+              <label htmlFor="newDepartmentCode">Department Code</label>
               <input
                 id="newDepartmentCode"
                 value={departmentCode}
-                onChange={(event) =>
-                  setDepartmentCode(event.target.value)
-                }
+                onChange={(event) => setDepartmentCode(event.target.value)}
                 placeholder="e.g. IT"
                 required
               />
 
-              <label htmlFor="newDepartmentDescription">
-                Description
-              </label>
+              <label htmlFor="newDepartmentDescription">Description</label>
               <textarea
                 id="newDepartmentDescription"
                 value={departmentDescription}
@@ -522,10 +558,7 @@ function App() {
                 placeholder="Department description"
               />
 
-              <button
-                type="submit"
-                disabled={isSavingAdminData}
-              >
+              <button type="submit" disabled={isSavingAdminData}>
                 {isSavingAdminData ? 'Saving...' : 'Save Department'}
               </button>
             </form>
@@ -535,28 +568,20 @@ function App() {
             <form onSubmit={handleAddResource}>
               <h3>Add Resource</h3>
 
-              <label htmlFor="newResourceName">
-                Resource Name
-              </label>
+              <label htmlFor="newResourceName">Resource Name</label>
               <input
                 id="newResourceName"
                 value={resourceName}
-                onChange={(event) =>
-                  setResourceName(event.target.value)
-                }
+                onChange={(event) => setResourceName(event.target.value)}
                 placeholder="e.g. Robotics Kit"
                 required
               />
 
-              <label htmlFor="newResourceType">
-                Resource Type
-              </label>
+              <label htmlFor="newResourceType">Resource Type</label>
               <select
                 id="newResourceType"
                 value={resourceType}
-                onChange={(event) =>
-                  setResourceType(event.target.value)
-                }
+                onChange={(event) => setResourceType(event.target.value)}
                 required
               >
                 <option value="equipment">Equipment</option>
@@ -565,9 +590,7 @@ function App() {
                 <option value="other">Other</option>
               </select>
 
-              <label htmlFor="newResourceDescription">
-                Description
-              </label>
+              <label htmlFor="newResourceDescription">Description</label>
               <textarea
                 id="newResourceDescription"
                 value={resourceDescription}
@@ -577,9 +600,7 @@ function App() {
                 placeholder="Resource description"
               />
 
-              <label htmlFor="newResourceDepartment">
-                Department
-              </label>
+              <label htmlFor="newResourceDepartment">Department</label>
               <select
                 id="newResourceDepartment"
                 value={resourceDepartment}
@@ -591,19 +612,13 @@ function App() {
                 <option value="">-- Choose a department --</option>
 
                 {departments.map((department) => (
-                  <option
-                    key={department._id}
-                    value={department._id}
-                  >
+                  <option key={department._id} value={department._id}>
                     {department.name} ({department.code})
                   </option>
                 ))}
               </select>
 
-              <button
-                type="submit"
-                disabled={isSavingAdminData}
-              >
+              <button type="submit" disabled={isSavingAdminData}>
                 {isSavingAdminData ? 'Saving...' : 'Save Resource'}
               </button>
             </form>
@@ -653,9 +668,7 @@ function App() {
                   disabled={resource.availability === false}
                 >
                   {resource.name}
-                  {resource.availability === false
-                    ? ' (Unavailable)'
-                    : ''}
+                  {resource.availability === false ? ' (Unavailable)' : ''}
                 </option>
               ))}
             </select>
@@ -702,8 +715,7 @@ function App() {
                   <p>
                     <strong>{resource.name}</strong>
                     {' — '}
-                    {resource.department?.name ||
-                      'Department not specified'}
+                    {resource.department?.name || 'Department not specified'}
                   </p>
 
                   <button
@@ -755,14 +767,10 @@ function App() {
                 <p>Type: {resource.type}</p>
                 <p>{resource.description}</p>
                 <p>
-                  Department:{' '}
-                  {resource.department?.name || 'Not assigned'}
+                  Department: {resource.department?.name || 'Not assigned'}
                 </p>
                 <p>
-                  Availability:{' '}
-                  {resource.availability
-                    ? 'Available'
-                    : 'Unavailable'}
+                  Availability: {resource.availability ? 'Available' : 'Unavailable'}
                 </p>
               </div>
             ))
@@ -784,28 +792,22 @@ function App() {
                 <p>Purpose: {request.purpose}</p>
 
                 <p>
-                  Start:{' '}
-                  {new Date(request.startDate).toLocaleString()}
+                  Start: {new Date(request.startDate).toLocaleString()}
                 </p>
 
                 <p>
-                  End:{' '}
-                  {new Date(request.endDate).toLocaleString()}
+                  End: {new Date(request.endDate).toLocaleString()}
                 </p>
 
                 <p>
                   Status:{' '}
-                  <span
-                    className={`request-status status-${request.status}`}
-                  >
+                  <span className={`request-status status-${request.status}`}>
                     {request.status}
                   </span>
                 </p>
 
                 {request.requestedBy?.name && (
-                  <p>
-                    Requested by: {request.requestedBy.name}
-                  </p>
+                  <p>Requested by: {request.requestedBy.name}</p>
                 )}
 
                 {/* Only admins see actions for pending requests */}
@@ -815,10 +817,7 @@ function App() {
                       <button
                         type="button"
                         onClick={() =>
-                          handleRequestStatus(
-                            request._id,
-                            'approved'
-                          )
+                          handleRequestStatus(request._id, 'approved')
                         }
                       >
                         Approve
@@ -827,10 +826,7 @@ function App() {
                       <button
                         type="button"
                         onClick={() =>
-                          handleRequestStatus(
-                            request._id,
-                            'rejected'
-                          )
+                          handleRequestStatus(request._id, 'rejected')
                         }
                       >
                         Reject
@@ -869,6 +865,7 @@ function App() {
             placeholder="Enter your email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            autoComplete="username"
             required
           />
 
@@ -880,14 +877,17 @@ function App() {
             placeholder="Enter your password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
             required
           />
 
-          <button type="submit">Sign In</button>
+          <button type="submit" disabled={isLoggingIn}>
+            {isLoggingIn ? 'Signing in...' : 'Sign In'}
+          </button>
         </form>
 
         {message && (
-          <p className="login-message" role="status">
+          <p className="login-message" role="status" aria-live="polite">
             {message}
           </p>
         )}
